@@ -1,12 +1,16 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import Tesseract from 'tesseract.js';
+import * as pdfjsLib from 'pdfjs-dist/build/pdf';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.entry';
+
+// PDF.js worker 설정
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [recognizedText, setRecognizedText] = useState('');
   const [loading, setLoading] = useState(false);
-
 
   const onDrop = useCallback((acceptedFiles) => {
     // 파일 드롭시 selectedFile에 반영
@@ -15,40 +19,54 @@ function App() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
 
-
-  const handleFileChange = (event) => {
-    //파일 선택시 selectedFile에 반영
-    setSelectedFile(event.target.files[0]);
-  };
-
   const handleFileUpload = async () => {
-  if (selectedFile) {
-    setLoading(true);
-    try {
-      const fileReader = new FileReader();
-      fileReader.onload = async (e) => {
-        try {
+    if (selectedFile) {
+      setLoading(true);
+      try {
+        if (selectedFile.type === 'application/pdf') {
+          // PDF 파일 처리
+          const pdf = await pdfjsLib.getDocument(URL.createObjectURL(selectedFile)).promise;
+          const page = await pdf.getPage(1); // 첫 번째 페이지를 가져옴
+          const viewport = page.getViewport({ scale: 1 });
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+
+          const renderContext = {
+            canvasContext: context,
+            viewport: viewport
+          };
+
+          await page.render(renderContext).promise;
+          const imageData = canvas.toDataURL('image/png'); // 캔버스를 이미지 데이터로 변환
+
           const { data: { text } } = await Tesseract.recognize(
-            e.target.result, // 데이터 URL
-            'eng+kor', // 영어와 한글
+            imageData,
+            'eng+kor',
             {
               logger: (m) => console.log(m),
             }
           );
           setRecognizedText(text);
-        } catch (error) {
-          console.error('텍스트 추출 중 오류 발생:', error);
-        } finally {
-          setLoading(false);
+        } else {
+          // 이미지 파일 처리
+          const { data: { text } } = await Tesseract.recognize(
+            URL.createObjectURL(selectedFile),
+            'eng+kor',
+            {
+              logger: (m) => console.log(m),
+            }
+          );
+          setRecognizedText(text);
         }
-      };
-      fileReader.readAsDataURL(selectedFile); // 파일을 데이터 URL로 읽기
-    } catch (error) {
-      console.error('파일 읽기 중 오류 발생:', error);
-      setLoading(false);
+      } catch (error) {
+        console.error('텍스트 추출 중 오류 발생:', error);
+      } finally {
+        setLoading(false);
+      }
     }
-  }
-};
+  };
 
   return (
     <div style={{ padding: '20px' }}>
@@ -62,7 +80,7 @@ function App() {
         }
       </div>
       <button onClick={handleFileUpload} disabled={!selectedFile || loading}>
-        {loading ? '처리 중...' : '업로드 및 변환'}
+        {loading ? '처리 중...' : '업로드 및 인식'}
       </button>
       <pre style={{ marginTop: '20px', whiteSpace: 'pre-wrap' }}>
         {recognizedText}
