@@ -27,34 +27,49 @@ function App() {
           // PDF 파일 처리
           const pdf = await pdfjsLib.getDocument(URL.createObjectURL(selectedFile)).promise;
           const numPages = pdf.numPages;
-          let fullText = '';
 
-          for (let pageNum = 1; pageNum <= numPages; pageNum++) { //pdf페이지 순회
-            const page = await pdf.getPage(pageNum);
-            const viewport = page.getViewport({ scale: 1 });
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
+          // 모든 페이지 병렬 처리
+          const pageTexts = await Promise.all(
+            Array.from({ length: numPages }, async (_, i) => {
+              const page = await pdf.getPage(i + 1); // 각 페이지를 비동기적으로 가져옴
+              const scale = 1; // 해상도 조정 (1보다 작으면 해상도 낮춤)
+              const viewport = page.getViewport({ scale }); // 페이지를 뷰포트에 맞게 렌더링
+              const canvas = document.createElement('canvas');
+              const context = canvas.getContext('2d');
+              canvas.height = viewport.height;
+              canvas.width = viewport.width;
 
-            const renderContext = {
-              canvasContext: context,
-              viewport: viewport
-            };
+              const renderContext = {
+                canvasContext: context,
+                viewport: viewport
+              };
 
-            await page.render(renderContext).promise;
-            const imageData = canvas.toDataURL('image/png'); // 캔버스를 이미지 데이터로 변환
+              await page.render(renderContext).promise; // 페이지를 캔버스에 렌더링
+              const imageData = canvas.toDataURL('image/png'); // 캔버스를 이미지 데이터로 변환
 
-            const { data: { text } } = await Tesseract.recognize(
-              imageData,
-              'eng+kor',
-              {
-                logger: (m) => console.log(m),
-              }
-            );
-            fullText += text + '\n';
-          }
-          setRecognizedText(fullText);
+              // Tesseract를 사용하여 이미지 데이터에서 텍스트 추출
+              const { data: { text } } = await Tesseract.recognize(
+                imageData,
+                'eng+kor',
+                {
+                  logger: (m) => console.log(m),
+                }
+              );
+              return text; // 추출된 텍스트 반환
+            })
+          );
+
+          setRecognizedText(pageTexts.join('\n')); // 모든 페이지의 텍스트를 하나로 합침
+        } else {
+          // 이미지 파일 처리
+          const { data: { text } } = await Tesseract.recognize(
+            URL.createObjectURL(selectedFile),
+            'eng+kor',
+            {
+              logger: (m) => console.log(m),
+            }
+          );
+          setRecognizedText(text);
         }
       } catch (error) {
         console.error('텍스트 추출 중 오류 발생:', error);
