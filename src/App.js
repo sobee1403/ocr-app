@@ -26,39 +26,35 @@ function App() {
         if (selectedFile.type === 'application/pdf') {
           // PDF 파일 처리
           const pdf = await pdfjsLib.getDocument(URL.createObjectURL(selectedFile)).promise;
-          const page = await pdf.getPage(1); // 첫 번째 페이지를 가져옴
-          const viewport = page.getViewport({ scale: 1 });
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d');
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
+          const numPages = pdf.numPages;
+          let fullText = '';
 
-          const renderContext = {
-            canvasContext: context,
-            viewport: viewport
-          };
+          for (let pageNum = 1; pageNum <= numPages; pageNum++) { //pdf페이지 순회
+            const page = await pdf.getPage(pageNum);
+            const viewport = page.getViewport({ scale: 1 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
 
-          await page.render(renderContext).promise;
-          const imageData = canvas.toDataURL('image/png'); // 캔버스를 이미지 데이터로 변환
+            const renderContext = {
+              canvasContext: context,
+              viewport: viewport
+            };
 
-          const { data: { text } } = await Tesseract.recognize(
-            imageData,
-            'eng+kor',
-            {
-              logger: (m) => console.log(m),
-            }
-          );
-          setRecognizedText(text);
-        } else {
-          // 이미지 파일 처리
-          const { data: { text } } = await Tesseract.recognize(
-            URL.createObjectURL(selectedFile),
-            'eng+kor',
-            {
-              logger: (m) => console.log(m),
-            }
-          );
-          setRecognizedText(text);
+            await page.render(renderContext).promise;
+            const imageData = canvas.toDataURL('image/png'); // 캔버스를 이미지 데이터로 변환
+
+            const { data: { text } } = await Tesseract.recognize(
+              imageData,
+              'eng+kor',
+              {
+                logger: (m) => console.log(m),
+              }
+            );
+            fullText += text + '\n';
+          }
+          setRecognizedText(fullText);
         }
       } catch (error) {
         console.error('텍스트 추출 중 오류 발생:', error);
